@@ -73,7 +73,7 @@ describe('レース処理', () => {
   it('ランダムな山札で必ずレースが終わり、順位が埋まる', () => {
     for (let seed = 1; seed <= 300; seed++) {
       const rng = seededRng(seed);
-      const s = newRace(buildDeck([], rng));
+      const s = newRace(buildDeck(rng));
       let guard = 0;
       while (!s.over && guard++ < 1000) drawNext(s, names, rng);
       expect(s.over).toBe(true);
@@ -93,6 +93,15 @@ describe('レース処理', () => {
   it('ラストスパート中は前進が1マス増える', () => {
     const s = race();
     s.lastSpurt = true;
+    applyCard(s, { kind: 'move', racer: 0, n: 2 }, names);
+    expect(s.racers[0].pos).toBe(3);
+  });
+
+  it('ラストスパート中でも逆走中の後退は増えない', () => {
+    const s = race();
+    s.lastSpurt = true;
+    s.racers[0].pos = 5;
+    s.racers[0].facing = -1;
     applyCard(s, { kind: 'move', racer: 0, n: 2 }, names);
     expect(s.racers[0].pos).toBe(3);
   });

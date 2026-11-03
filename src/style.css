@@ -337,8 +337,8 @@ button:disabled {
 
 .token {
   position: absolute;
-  left: calc(var(--x) * (100% + 2px) / var(--cols));
-  top: calc(var(--y) * (100% + 2px) / var(--lanes));
+  left: calc((var(--x) + var(--dx, 0)) * (100% + 2px) / var(--cols));
+  top: calc((var(--y) + var(--dy, 0)) * (100% + 2px) / var(--lanes));
   width: calc((100% + 2px) / var(--cols) - 2px);
   height: calc((100% + 2px) / var(--lanes) - 2px);
   display: flex;
@@ -382,6 +382,12 @@ button:disabled {
 
 .token.dq {
   opacity: 0.35;
+}
+
+.token.crowded .face {
+  width: 62%;
+  max-height: 62%;
+  font-size: clamp(13px, 2.4vw, 24px);
 }
 
 .token .badge {

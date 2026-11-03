@@ -5,7 +5,6 @@ export const LANE_COUNT = 4;
 export const FINISH = 14;
 export const STARS = [4, 7, 10];
 export const RACE_COUNT = 3;
-export const HAND_SIZE = 3;
 export const DECK_SIZE = 24;
 export const MAX_RESHUFFLES = 2;
 export const BURN_COUNT = 3;
@@ -98,11 +97,10 @@ export function cardPool(rng: Rng): Card[] {
   return pool;
 }
 
-// 山札：基本カード + ランダムなカード (+ 任意で追加カード) で DECK_SIZE 枚
-export function buildDeck(playerCards: Card[], rng: Rng): Card[] {
-  const randomCount = DECK_SIZE - RACER_COUNT - playerCards.length;
-  const random = shuffle(cardPool(rng), rng).slice(0, Math.max(0, randomCount));
-  return shuffle([...starterCards(), ...random, ...playerCards], rng);
+// 山札：基本カード + ランダムなカード で DECK_SIZE 枚
+export function buildDeck(rng: Rng): Card[] {
+  const random = shuffle(cardPool(rng), rng).slice(0, DECK_SIZE - RACER_COUNT);
+  return shuffle([...starterCards(), ...random], rng);
 }
 
 export function newRace(deck: Card[], lanes: number[] = [0, 1, 2, 3]): RaceState {
@@ -201,9 +199,10 @@ function step(ctx: Ctx, r: number, dir: 1 | -1, count: number, opts: { collide: 
 function moveRacer(ctx: Ctx, r: number, n: number, opts = { collide: true, canFinish: true }) {
   const racer = ctx.state.racers[r];
   if (racer.status !== 'running' || n === 0) return;
-  const boost = ctx.state.lastSpurt && n > 0 && opts.collide ? 1 : 0;
-  const count = racer.fallen ? 1 : Math.abs(n) + boost;
   const dir = (racer.facing * Math.sign(n)) as 1 | -1;
+  // ラストスパートは実際に前へ進むときだけ +1（全員移動・イベントは対象外）
+  const boost = ctx.state.lastSpurt && dir === 1 && opts.collide ? 1 : 0;
+  const count = racer.fallen ? 1 : Math.abs(n) + boost;
   if (racer.fallen) ctx.log.push(`${ctx.names[r]}は転んでいるので1マスだけ`);
   step(ctx, r, dir, count, opts);
 }

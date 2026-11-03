@@ -27,7 +27,9 @@ const RACERS = [
 ];
 const NAMES = RACERS.map((r) => r.name);
 const STEP_MS = [1300, 650];
-const SAVE_KEY = 'dash-derby-save-v1';
+const SAVE_KEY = 'dash-derby-save';
+const SAVE_VERSION = 2;
+const PHASES: Phase[] = ['setup', 'pass', 'bet', 'ready', 'race', 'result', 'final'];
 
 type Phase = 'setup' | 'pass' | 'bet' | 'ready' | 'race' | 'result' | 'final';
 
@@ -38,6 +40,7 @@ interface Player {
 }
 
 interface Game {
+  version: number;
   phase: Phase;
   players: Player[];
   raceIndex: number;
@@ -56,7 +59,7 @@ let paused = false;
 let draftBet: Partial<Bet> = {};
 
 function freshGame(): Game {
-  return { phase: 'setup', players: [], raceIndex: 0, betTurn: 0, bets: [], race: null, log: [], last: null, speed: 0 };
+  return { version: SAVE_VERSION, phase: 'setup', players: [], raceIndex: 0, betTurn: 0, bets: [], race: null, log: [], last: null, speed: 0 };
 }
 
 function save() {
@@ -70,10 +73,22 @@ function save() {
 function load(): Game | null {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
-    return raw ? (JSON.parse(raw) as Game) : null;
+    if (!raw) return null;
+    const g = JSON.parse(raw) as Game;
+    return isValidSave(g) ? g : null;
   } catch {
     return null;
   }
+}
+
+// 古い版や壊れた保存データは読まずにタイトルから始める
+function isValidSave(g: Game): boolean {
+  if (!g || g.version !== SAVE_VERSION || !PHASES.includes(g.phase) || !Array.isArray(g.players)) return false;
+  if (g.phase !== 'setup' && g.players.length < 2) return false;
+  const needsBets = ['ready', 'race', 'result'].includes(g.phase);
+  if (needsBets && g.bets.length !== g.players.length) return false;
+  if ((g.phase === 'race' || g.phase === 'result') && !(g.race && Array.isArray(g.race.racers) && Array.isArray(g.race.deck))) return false;
+  return true;
 }
 
 function esc(s: string) {
@@ -91,8 +106,34 @@ function setPhase(phase: Phase) {
   render();
 }
 
+let renderedAt = 0;
+
+// 画面が切り替わった直後のタップは、前の画面への連打とみなして無視する
+app.addEventListener(
+  'click',
+  (e) => {
+    if (performance.now() - renderedAt < 400) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  },
+  true,
+);
+
 function render() {
   stopTimer();
+  renderedAt = performance.now();
+  try {
+    renderPhase();
+  } catch (err) {
+    console.error(err);
+    game = freshGame();
+    save();
+    renderSetup();
+  }
+}
+
+function renderPhase() {
   switch (game.phase) {
     case 'setup':
       return renderSetup();
@@ -234,7 +275,7 @@ function renderReady() {
     </main>`;
   app.querySelector('#go')!.addEventListener('click', () => {
     const lanes = shuffle([0, 1, 2, 3], Math.random);
-    game.race = newRace(buildDeck([], Math.random), lanes);
+    game.race = newRace(buildDeck(Math.random), lanes);
     game.log = ['よーい…スタート！'];
     game.last = null;
     paused = false;
@@ -298,8 +339,19 @@ function updateRace() {
   const race = game.race!;
   const track = document.getElementById('track');
   if (!track) return;
+  // 同じマスにいるコマは少しずつずらして重ならないようにする
+  const cellOf = (i: number) => {
+    const r = race.racers[i];
+    return `${Math.max(0, Math.min(FINISH, r.pos))}:${Math.max(0, Math.min(LANE_COUNT - 1, r.lane))}`;
+  };
   race.racers.forEach((r, i) => {
     const t = document.getElementById(`t${i}`)!;
+    const mates = race.racers.map((_, j) => j).filter((j) => cellOf(j) === cellOf(i));
+    const k = mates.indexOf(i);
+    const shift = mates.length > 1 ? String((k - (mates.length - 1) / 2) * 0.3) : '0';
+    t.style.setProperty('--dx', shift);
+    t.style.setProperty('--dy', shift);
+    t.classList.toggle('crowded', mates.length > 1);
     t.style.setProperty('--x', String(Math.max(0, Math.min(FINISH, r.pos))));
     t.style.setProperty('--y', String(Math.max(0, Math.min(LANE_COUNT - 1, r.lane))));
     t.classList.toggle('fallen', r.fallen);
@@ -314,6 +366,10 @@ function updateRace() {
   pause.hidden = race.over;
   const card = document.getElementById('card')!;
   card.className = `card ${game.last?.kind ?? ''}`;
+  // カードが替わるたびにめくる演出をやり直す
+  card.style.animation = 'none';
+  void card.offsetWidth;
+  card.style.animation = '';
   card.innerHTML = game.last ? `<div class="title">${game.last.title}</div><div class="detail">${game.last.detail}</div>` : `<div class="title">3…2…1…</div>`;
   document.getElementById('log')!.innerHTML = game.log
     .slice(-4)
@@ -420,5 +476,4 @@ function renderFinal() {
 
 // レース途中で再読み込みした場合は一時停止から再開する
 if (game.phase === 'race') paused = true;
-if (game.players.length && game.players.length < 2) game = freshGame();
 render();
