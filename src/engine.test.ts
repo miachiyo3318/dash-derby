@@ -107,6 +107,27 @@ describe('レース処理', () => {
   });
 });
 
+describe('演出用の出来事', () => {
+  it('衝突・転倒・失格・ゴールをデータで返す', () => {
+    const s = race();
+    s.racers[1].lane = 0;
+    s.racers[1].pos = 2;
+    s.racers[1].fallen = true;
+    const out = applyCard(s, { kind: 'move', racer: 0, n: 3 }, names);
+    expect(out.effects).toEqual([
+      { type: 'collide', by: 0, hit: 1 },
+      { type: 'dq', racer: 1 },
+    ]);
+    s.racers[0].pos = FINISH - 1;
+    expect(applyCard(s, { kind: 'move', racer: 0, n: 1 }, names).effects).toEqual([{ type: 'goal', racer: 0, place: 1 }]);
+  });
+  it('イベントは対象のコマも返す', () => {
+    const s = race();
+    s.racers[3].pos = 6;
+    expect(applyEvent(s, 'headwind', names, seededRng(1)).effects).toEqual([{ type: 'event', kind: 'headwind', racers: [3] }]);
+  });
+});
+
 describe('ランダムイベント', () => {
   it('向かい風で先頭が下がる', () => {
     const s = race();
