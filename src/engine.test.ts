@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCard, buildDeck, drawNext, FINISH, newRace, scoreBet, seededRng, type Card } from './engine';
+import { applyCard, applyEvent, BURN_COUNT as BURN, buildDeck, drawNext, FINISH, newRace, scoreBet, seededRng, type Card } from './engine';
 
 const names = ['A', 'B', 'C', 'D'];
 const race = () => newRace(Array<Card>(10).fill({ kind: 'move', racer: 0, n: 1 }));
@@ -38,11 +38,13 @@ describe('レース処理', () => {
     expect(s.racers[0].pos).toBe(4);
   });
 
-  it('逆向きで前進すると後ろへ進み、コース外で失格', () => {
+  it('逆向きで前進すると後ろへ進むが、スタートより後ろには下がらない', () => {
     const s = race();
+    s.racers[2].pos = 1;
     applyCard(s, { kind: 'turn', racer: 2 }, names);
-    applyCard(s, { kind: 'move', racer: 2, n: 1 }, names);
-    expect(s.racers[2].status).toBe('dq');
+    applyCard(s, { kind: 'move', racer: 2, n: 3 }, names);
+    expect(s.racers[2].pos).toBe(0);
+    expect(s.racers[2].status).toBe('running');
   });
 
   it('端のレーンから外へ車線変更すると失格', () => {
@@ -77,5 +79,62 @@ describe('レース処理', () => {
       expect(s.over).toBe(true);
       expect([...s.places].sort()).toEqual([0, 1, 2, 3]);
     }
+  });
+
+  it('混ぜ直しの上限を超えると写真判定で決着する', () => {
+    const s = newRace(Array<Card>(BURN + 2).fill({ kind: 'turn', racer: 0 }));
+    s.racers[1].pos = 5;
+    let guard = 0;
+    while (!s.over && guard++ < 100) drawNext(s, names, () => 0.99);
+    expect(s.lastSpurt).toBe(true);
+    expect(s.places[0]).toBe(1);
+  });
+
+  it('ラストスパート中は前進が1マス増える', () => {
+    const s = race();
+    s.lastSpurt = true;
+    applyCard(s, { kind: 'move', racer: 0, n: 2 }, names);
+    expect(s.racers[0].pos).toBe(3);
+  });
+});
+
+describe('ランダムイベント', () => {
+  it('向かい風で先頭が下がる', () => {
+    const s = race();
+    s.racers[3].pos = 10;
+    applyEvent(s, 'headwind', names, seededRng(1));
+    expect(s.racers[3].pos).toBe(8);
+  });
+  it('大歓声で転んだコマが全員起き上がる', () => {
+    const s = race();
+    s.racers[0].fallen = true;
+    s.racers[2].fallen = true;
+    applyEvent(s, 'cheer', names, seededRng(1));
+    expect(s.racers.every((r) => !r.fallen)).toBe(true);
+  });
+  it('イベントでもスタートより後ろには下がらない', () => {
+    const s = race();
+    applyEvent(s, 'headwind', names, seededRng(1));
+    expect(s.racers.every((r) => r.status === 'running' && r.pos === 0)).toBe(true);
+  });
+  it('つむじ風で2体のレーンが入れ替わる', () => {
+    const s = race();
+    applyEvent(s, 'gust', names, seededRng(3));
+    expect(s.racers.map((r) => r.lane).sort()).toEqual([0, 1, 2, 3]);
+    expect(s.racers.filter((r, i) => r.lane !== i)).toHaveLength(2);
+  });
+});
+
+describe('山札', () => {
+  it('失格したコマのカードは飛ばして次をめくる', () => {
+    const s = newRace([
+      ...Array<Card>(3).fill({ kind: 'turn', racer: 0 }),
+      { kind: 'move', racer: 1, n: 3 },
+      { kind: 'move', racer: 2, n: 2 },
+    ]);
+    s.racers[1].status = 'dq';
+    const t = drawNext(s, names, () => 0.99);
+    expect(t.card).toEqual({ kind: 'move', racer: 2, n: 2 });
+    expect(s.racers[2].pos).toBe(2);
   });
 });

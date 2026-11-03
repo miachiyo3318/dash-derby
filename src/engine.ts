@@ -2,13 +2,14 @@
 
 export const RACER_COUNT = 4;
 export const LANE_COUNT = 4;
-export const FINISH = 20;
-export const STARS = [4, 8, 12, 16];
+export const FINISH = 14;
+export const STARS = [4, 7, 10];
 export const RACE_COUNT = 3;
 export const HAND_SIZE = 3;
-export const DECK_SIZE = 18;
+export const DECK_SIZE = 24;
+export const MAX_RESHUFFLES = 2;
 export const BURN_COUNT = 3;
-export const SHRINK_STEP = 5;
+export const EVENT_CHANCE = 0.2;
 
 export type Rng = () => number;
 
@@ -36,7 +37,8 @@ export interface RaceState {
   racers: Racer[];
   deck: Card[];
   used: Card[];
-  trackStart: number;
+  reshuffles: number;
+  lastSpurt: boolean;
   places: (number | null)[]; // places[i] = i+1 着のレーサー
   over: boolean;
 }
@@ -96,17 +98,17 @@ export function cardPool(rng: Rng): Card[] {
   return pool;
 }
 
-// 山札：基本カード + ランダムなカード + プレイヤーが入れたカード で DECK_SIZE 枚
+// 山札：基本カード + ランダムなカード (+ 任意で追加カード) で DECK_SIZE 枚
 export function buildDeck(playerCards: Card[], rng: Rng): Card[] {
   const randomCount = DECK_SIZE - RACER_COUNT - playerCards.length;
   const random = shuffle(cardPool(rng), rng).slice(0, Math.max(0, randomCount));
   return shuffle([...starterCards(), ...random, ...playerCards], rng);
 }
 
-export function newRace(deck: Card[]): RaceState {
+export function newRace(deck: Card[], lanes: number[] = [0, 1, 2, 3]): RaceState {
   const state: RaceState = {
     racers: Array.from({ length: RACER_COUNT }, (_, i) => ({
-      lane: i,
+      lane: lanes[i],
       pos: 0,
       facing: 1,
       fallen: false,
@@ -115,7 +117,8 @@ export function newRace(deck: Card[]): RaceState {
     })),
     deck: deck.slice(),
     used: [],
-    trackStart: 0,
+    reshuffles: 0,
+    lastSpurt: false,
     places: Array(RACER_COUNT).fill(null),
     over: false,
   };
@@ -183,11 +186,7 @@ function step(ctx: Ctx, r: number, dir: 1 | -1, count: number, opts: { collide: 
       finish(ctx, r);
       return;
     }
-    if (next < state.trackStart) {
-      racer.pos = next;
-      disqualify(ctx, r, 'コースの後ろにはみ出したの');
-      return;
-    }
+    if (next < 0) return; // スタート地点より後ろには下がらない
     racer.pos = next;
     if (opts.collide) {
       state.racers.forEach((o, i) => {
@@ -202,7 +201,8 @@ function step(ctx: Ctx, r: number, dir: 1 | -1, count: number, opts: { collide: 
 function moveRacer(ctx: Ctx, r: number, n: number, opts = { collide: true, canFinish: true }) {
   const racer = ctx.state.racers[r];
   if (racer.status !== 'running' || n === 0) return;
-  const count = racer.fallen ? 1 : Math.abs(n);
+  const boost = ctx.state.lastSpurt && n > 0 && opts.collide ? 1 : 0;
+  const count = racer.fallen ? 1 : Math.abs(n) + boost;
   const dir = (racer.facing * Math.sign(n)) as 1 | -1;
   if (racer.fallen) ctx.log.push(`${ctx.names[r]}は転んでいるので1マスだけ`);
   step(ctx, r, dir, count, opts);
@@ -221,7 +221,7 @@ export function applyCard(state: RaceState, card: Card, names: string[]): string
     case 'star': {
       const racer = state.racers[card.racer];
       const targets = racer.facing === 1 ? [...STARS, FINISH].filter((s) => s > racer.pos) : STARS.filter((s) => s < racer.pos).reverse();
-      const target = targets.find((s) => s >= state.trackStart);
+      const target = targets[0];
       if (target === undefined) {
         ctx.log.push(`${names[card.racer]}の向いている方に星がない`);
       } else if (racer.fallen) {
@@ -289,33 +289,126 @@ function checkRaceOver(ctx: Ctx) {
   }
 }
 
-// 山札が尽きたら使ったカードを混ぜ直し、スタート側からコースを縮める
-function reshuffle(ctx: Ctx, rng: Rng) {
+// 山札が尽きたら混ぜ直してラストスパート（前進+1）。混ぜ直しの上限を超えたら写真判定
+function deckOut(ctx: Ctx, rng: Rng) {
   const { state } = ctx;
-  state.deck = shuffle(state.used, rng);
-  state.used = [];
-  state.trackStart = Math.min(state.trackStart + SHRINK_STEP, FINISH - 1);
-  ctx.log.push('山札を混ぜ直し、コースが短くなった！');
-  state.racers.forEach((r, i) => {
-    if (r.status === 'running' && r.pos < state.trackStart) disqualify(ctx, i, 'コースが縮んで取り残されたの');
-  });
+  if (state.reshuffles < MAX_RESHUFFLES) {
+    state.deck = shuffle(state.used, rng);
+    state.used = [];
+    state.reshuffles++;
+    if (!state.lastSpurt) {
+      state.lastSpurt = true;
+      ctx.log.push('山札を混ぜ直し、ラストスパート！ 前に進むカードが1マス増える');
+    } else {
+      ctx.log.push('山札を混ぜ直し！ これが最後の山札');
+    }
+    burn(state);
+    return;
+  }
+  ctx.log.push('山札が尽きた！ 写真判定で順位を決める');
+  const running = state.racers
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r.status === 'running')
+    .sort((a, b) => b.r.pos - a.r.pos || a.i - b.i);
+  for (const { r, i } of running) {
+    r.status = 'finished';
+    takeTopPlace(state, i);
+    ctx.log.push(`${ctx.names[i]}は${r.place}着`);
+  }
+  state.over = true;
+}
+
+export type EventKind = 'tailwind' | 'mud' | 'headwind' | 'cheer' | 'gust';
+
+export const EVENT_TITLES: Record<EventKind, string> = {
+  tailwind: '追い風',
+  mud: 'ぬかるみ',
+  headwind: '向かい風',
+  cheer: '大歓声',
+  gust: 'つむじ風',
+};
+
+const NO_CONTACT = { collide: false, canFinish: false };
+
+// 複数のコマに同時に効く突発イベント。ぶつからず、ゴールもしない
+export function applyEvent(state: RaceState, kind: EventKind, names: string[], rng: Rng): string[] {
+  const ctx: Ctx = { state, log: [], names };
+  const running = state.racers.map((r, i) => (r.status === 'running' ? i : -1)).filter((i) => i >= 0);
+  switch (kind) {
+    case 'tailwind': {
+      const lucky = shuffle(running, rng).slice(0, Math.min(running.length, 2 + Math.floor(rng() * 2)));
+      ctx.log.push(`追い風！ ${lucky.map((r) => names[r]).join('・')}が押し出される`);
+      lucky.forEach((r) => moveRacer(ctx, r, 2, NO_CONTACT));
+      break;
+    }
+    case 'mud': {
+      const from = 1 + Math.floor(rng() * (FINISH - 5));
+      const to = from + 4;
+      const stuck = running.filter((r) => state.racers[r].pos >= from && state.racers[r].pos <= to);
+      ctx.log.push(`${from}〜${to}マスがぬかるみに！`);
+      if (stuck.length === 0) ctx.log.push('…でも誰もいなかった');
+      stuck.forEach((r) => {
+        ctx.log.push(`${names[r]}が足を取られて後ずさり`);
+        step(ctx, r, -1, 2, NO_CONTACT);
+      });
+      break;
+    }
+    case 'headwind': {
+      const lead = Math.max(...running.map((r) => state.racers[r].pos));
+      const hit = running.filter((r) => state.racers[r].pos === lead);
+      ctx.log.push(`向かい風！ 先頭の${hit.map((r) => names[r]).join('・')}が押し戻される`);
+      hit.forEach((r) => step(ctx, r, -1, 2, NO_CONTACT));
+      break;
+    }
+    case 'cheer': {
+      const fallen = running.filter((r) => state.racers[r].fallen);
+      ctx.log.push('観客席から大歓声！');
+      if (fallen.length === 0) ctx.log.push('みんな元気いっぱい');
+      fallen.forEach((r) => {
+        state.racers[r].fallen = false;
+        ctx.log.push(`${names[r]}が起き上がった`);
+      });
+      break;
+    }
+    case 'gust': {
+      const [a, b] = shuffle(running, rng);
+      if (b === undefined) break;
+      const ra = state.racers[a];
+      const rb = state.racers[b];
+      [ra.lane, rb.lane] = [rb.lane, ra.lane];
+      ctx.log.push(`つむじ風！ ${names[a]}と${names[b]}のレーンが入れ替わった`);
+      break;
+    }
+  }
   checkRaceOver(ctx);
-  if (!state.over) burn(state);
+  return ctx.log;
 }
 
 export interface Turn {
   card: Card | null;
+  event: EventKind | null;
   log: string[];
 }
 
 export function drawNext(state: RaceState, names: string[], rng: Rng): Turn {
   const ctx: Ctx = { state, log: [], names };
-  if (state.over) return { card: null, log: [] };
-  if (state.deck.length === 0) reshuffle(ctx, rng);
-  if (state.over) return { card: null, log: ctx.log };
-  const card = state.deck.shift()!;
-  state.used.push(card);
-  return { card, log: [...ctx.log, ...applyCard(state, card, names)] };
+  if (state.over) return { card: null, event: null, log: [] };
+  if (state.deck.length === 0) deckOut(ctx, rng);
+  if (state.over) return { card: null, event: null, log: ctx.log };
+  if (rng() < EVENT_CHANCE) {
+    const kinds = Object.keys(EVENT_TITLES) as EventKind[];
+    const event = kinds[Math.floor(rng() * kinds.length)];
+    return { card: null, event, log: [...ctx.log, ...applyEvent(state, event, names, rng)] };
+  }
+  // もうレースにいないコマのカードは飛ばす
+  while (state.deck.length > 0) {
+    const card = state.deck.shift()!;
+    state.used.push(card);
+    if (card.kind === 'all' || state.racers[card.racer].status === 'running') {
+      return { card, event: null, log: [...ctx.log, ...applyCard(state, card, names)] };
+    }
+  }
+  return { card: null, event: null, log: ctx.log };
 }
 
 export function scoreBet(bet: Bet, places: (number | null)[], raceIndex: number): number {
