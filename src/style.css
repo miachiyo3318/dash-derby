@@ -351,55 +351,151 @@ button:disabled {
   z-index: 2;
 }
 
-.token .face {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 92%;
+.token .body {
+  position: relative;
+  width: 118%;
   aspect-ratio: 1;
-  max-height: 92%;
-  border-radius: 50%;
-  background: var(--c);
-  border: 3px solid #fff;
-  font-size: clamp(18px, 3.6vw, 34px);
-  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.3);
+  max-height: 118%;
+  display: flex;
   transition: transform 0.3s;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35));
 }
 
-.token.back .face {
+.token .body svg {
+  width: 100%;
+  height: 100%;
+}
+
+.token .shadow {
+  position: absolute;
+  bottom: 8%;
+  width: 70%;
+  height: 14%;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--c) 70%, #000);
+  opacity: 0.55;
+}
+
+.token.crowded .body {
+  width: 80%;
+  max-height: 80%;
+}
+
+/* 逆走：左向きにして赤い矢印を出す */
+.token.back .body {
   transform: scaleX(-1);
-  border-color: #ef476f;
 }
 
-.token.fallen .face {
-  transform: rotate(90deg);
-  filter: grayscale(0.4);
+.token .arrow,
+.token .dizzy {
+  position: absolute;
+  top: -12%;
+  display: none;
+  font-weight: 900;
+  pointer-events: none;
 }
 
-.token.back.fallen .face {
-  transform: scaleX(-1) rotate(90deg);
+.token .arrow {
+  left: -6%;
+  color: #fff;
+  background: #ef476f;
+  border-radius: 6px;
+  padding: 0 4px;
+  font-size: clamp(10px, 1.8vw, 15px);
+  animation: blink 0.8s infinite;
+}
+
+.token.back .arrow {
+  display: block;
+}
+
+.token.fallen .body {
+  transform: rotate(80deg) translateX(10%);
+}
+
+.token.back.fallen .body {
+  transform: scaleX(-1) rotate(80deg) translateX(10%);
+}
+
+.token .dizzy {
+  color: #ffd166;
+  font-size: clamp(9px, 1.6vw, 14px);
+  letter-spacing: 2px;
+  animation: spin 1.2s linear infinite;
+}
+
+.token.fallen .dizzy {
+  display: block;
+}
+
+.token.moving .legs .a {
+  animation: leg 0.18s ease-in-out 3 alternate;
+}
+
+.token.moving .legs .b {
+  animation: leg 0.18s ease-in-out 3 alternate-reverse;
+}
+
+.token.moving .body {
+  animation: hop 0.18s ease-in-out 3 alternate;
+}
+
+.token.back.moving .body {
+  animation: hop-back 0.18s ease-in-out 3 alternate;
+}
+
+.legs .leg {
+  transform-origin: 32px 50px;
+}
+
+@keyframes leg {
+  from {
+    transform: rotate(-28deg);
+  }
+  to {
+    transform: rotate(28deg);
+  }
+}
+
+@keyframes hop {
+  to {
+    transform: translateY(-12%);
+  }
+}
+
+@keyframes hop-back {
+  from {
+    transform: scaleX(-1);
+  }
+  to {
+    transform: scaleX(-1) translateY(-12%);
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .token.dq {
   opacity: 0.35;
-}
-
-.token.crowded .face {
-  width: 62%;
-  max-height: 62%;
-  font-size: clamp(13px, 2.4vw, 24px);
+  filter: grayscale(1);
 }
 
 .token .badge {
   position: absolute;
-  top: -6px;
-  right: -4px;
-  background: var(--accent);
-  color: #1b1b1b;
-  font-size: 12px;
-  font-weight: 800;
-  padding: 1px 6px;
-  border-radius: 999px;
+  top: -10%;
+  right: -8%;
+  font-size: clamp(14px, 2.4vw, 22px);
+  font-weight: 900;
+  line-height: 1;
 }
 
 .token .badge:empty {
@@ -409,6 +505,424 @@ button:disabled {
 .token.dq .badge {
   background: #ef476f;
   color: #fff;
+  font-size: 11px;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+/* ---- コースの飾り ---- */
+.track-wrap {
+  position: relative;
+}
+
+.track-wrap.spurt {
+  box-shadow:
+    0 0 0 3px #ef476f,
+    0 0 24px #ef476f;
+  animation: pulse 1s infinite alternate;
+}
+
+@keyframes pulse {
+  to {
+    box-shadow:
+      0 0 0 3px #ffd166,
+      0 0 30px #ef476f;
+  }
+}
+
+.track-wrap.shake {
+  animation: shake 0.45s;
+}
+
+@keyframes shake {
+  20% {
+    transform: translate(-8px, 3px);
+  }
+  40% {
+    transform: translate(7px, -4px);
+  }
+  60% {
+    transform: translate(-5px, 2px);
+  }
+  80% {
+    transform: translate(3px, -1px);
+  }
+}
+
+.stands {
+  position: relative;
+  height: clamp(22px, 4vw, 34px);
+  margin: -4px 0 8px;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 6px 8px, #ffd166 3px, transparent 4px) 0 0 / 16px 14px,
+    radial-gradient(circle at 12px 10px, #ef476f 3px, transparent 4px) 0 0 / 22px 14px,
+    radial-gradient(circle at 4px 6px, #8ecae6 3px, transparent 4px) 0 0 / 19px 14px,
+    #3d2c1e;
+}
+
+.stands.wave {
+  animation: wave 0.3s 4 alternate;
+}
+
+@keyframes wave {
+  to {
+    background-position:
+      0 -5px,
+      4px -6px,
+      -3px -5px,
+      0 0;
+  }
+}
+
+.goal-arch {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(100% / 15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ef476f;
+  color: #fff;
+  font-weight: 900;
+  font-size: clamp(8px, 1.4vw, 13px);
+  border-radius: 6px;
+}
+
+.track {
+  border-top: 3px solid #f8f9fa;
+  border-bottom: 3px solid #f8f9fa;
+  padding: 2px 0;
+}
+
+.cell {
+  box-shadow: inset 0 -2px 0 rgba(255, 255, 255, 0.25);
+}
+
+.cell.start {
+  background: repeating-linear-gradient(90deg, #adb5bd 0 6px, #6c757d 6px 9px);
+}
+
+.cell.mud {
+  background: #7f5539 !important;
+  transition: background 0.3s;
+}
+
+/* ---- 実況テロップ ---- */
+.ticker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+  background: #111;
+  border-radius: 10px;
+  padding: 8px 12px;
+  border-left: 6px solid #ef476f;
+}
+
+.ticker .mic {
+  flex: none;
+  background: #ef476f;
+  color: #fff;
+  font-weight: 900;
+  font-size: 13px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.ticker .line {
+  white-space: nowrap;
+  font-size: clamp(16px, 2.8vw, 24px);
+  font-weight: 800;
+  color: #fff;
+}
+
+.ticker .line.in {
+  animation: slide-in 0.45s ease-out;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(60%);
+    opacity: 0;
+  }
+}
+
+/* ---- カットイン ---- */
+.cutin {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  --band: #ffd166;
+  --ink: #1b1b1b;
+}
+
+.cutin[hidden] {
+  display: none;
+}
+
+.cutin .band {
+  position: relative;
+  width: 140%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 3vw, 32px);
+  padding: clamp(14px, 3vw, 28px) 20%;
+  box-sizing: border-box;
+  background: var(--band);
+  color: var(--ink);
+  transform: rotate(-6deg);
+  box-shadow:
+    0 -8px 0 #fff,
+    0 8px 0 #fff,
+    0 0 40px rgba(0, 0, 0, 0.5);
+  animation: band-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes band-in {
+  from {
+    transform: rotate(-6deg) translateX(-100%);
+  }
+}
+
+.cutin .who {
+  display: flex;
+  gap: 8px;
+}
+
+.cutin .big-racer {
+  width: clamp(80px, 14vw, 140px);
+  aspect-ratio: 1;
+  display: flex;
+  animation: pop 0.35s ease-out;
+}
+
+.cutin .big-racer svg {
+  width: 100%;
+  height: 100%;
+}
+
+.cutin.k-collide .big-racer.hit {
+  transform: scaleX(-1) rotate(-25deg);
+}
+
+.cutin.k-collide .who {
+  gap: 0;
+}
+
+.cutin.k-fall .big-racer,
+.cutin.k-dq .big-racer {
+  transform: rotate(80deg);
+}
+
+@keyframes pop {
+  from {
+    scale: 0.3;
+  }
+}
+
+.cutin .title {
+  font-size: clamp(28px, 7vw, 72px);
+  font-weight: 900;
+  line-height: 1.05;
+  -webkit-text-stroke: 2px var(--ink);
+  text-shadow: 3px 3px 0 #fff;
+}
+
+.cutin .words {
+  white-space: nowrap;
+}
+
+.cutin .subline {
+  font-size: clamp(14px, 2.8vw, 26px);
+  font-weight: 800;
+  margin-top: 4px;
+}
+
+.cutin.k-collide {
+  --band: #ff9f1c;
+}
+.cutin.k-fall {
+  --band: #ffbf69;
+}
+.cutin.k-dq {
+  --band: #d62828;
+  --ink: #fff;
+}
+.cutin.k-goal {
+  --band: linear-gradient(90deg, #f9c74f, #fff3b0, #f9c74f);
+}
+.cutin.k-spurt {
+  --band: #ef476f;
+  --ink: #fff;
+}
+.cutin.k-tailwind,
+.cutin.k-headwind {
+  --band: #8ecae6;
+}
+.cutin.k-mud {
+  --band: #9c6644;
+  --ink: #fff;
+}
+.cutin.k-cheer {
+  --band: #f15bb5;
+  --ink: #fff;
+}
+.cutin.k-gust {
+  --band: #b8c0ff;
+}
+
+.cutin.k-dq .title,
+.cutin.k-spurt .title,
+.cutin.k-mud .title,
+.cutin.k-cheer .title {
+  text-shadow: 3px 3px 0 #000;
+  -webkit-text-stroke: 0;
+}
+
+.cutin .stamp {
+  position: absolute;
+  right: 22%;
+  top: 50%;
+  translate: 0 -50%;
+  border: 6px solid #fff;
+  color: #fff;
+  font-size: clamp(28px, 5vw, 52px);
+  font-weight: 900;
+  padding: 0 14px;
+  border-radius: 10px;
+  rotate: 14deg;
+  animation: stamp 0.35s 0.15s both cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+@keyframes stamp {
+  from {
+    scale: 3;
+    opacity: 0;
+  }
+}
+
+/* 風：流れる線 */
+.cutin .fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cutin.k-tailwind .fx,
+.cutin.k-headwind .fx {
+  background: repeating-linear-gradient(0deg, transparent 0 14px, rgba(255, 255, 255, 0.7) 14px 16px, transparent 16px 34px) 0 0 / 200% 100%;
+  animation: wind 0.5s linear infinite;
+  mask-image: repeating-linear-gradient(90deg, #000 0 60px, transparent 60px 140px);
+}
+
+.cutin.k-headwind .fx {
+  animation-direction: reverse;
+}
+
+@keyframes wind {
+  to {
+    mask-position: 140px 0;
+  }
+}
+
+.cutin.k-gust .big-racer {
+  animation: twirl 0.8s ease-in-out;
+}
+
+@keyframes twirl {
+  to {
+    rotate: 720deg;
+  }
+}
+
+.cutin.k-mud .fx {
+  background:
+    radial-gradient(circle at 20% 30%, #5e3b22 8px, transparent 9px),
+    radial-gradient(circle at 70% 70%, #5e3b22 10px, transparent 11px),
+    radial-gradient(circle at 85% 25%, #5e3b22 6px, transparent 7px),
+    radial-gradient(circle at 35% 80%, #5e3b22 7px, transparent 8px);
+  animation: pop 0.3s ease-out;
+}
+
+.cutin.k-collide .fx {
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.9) 0 30px, transparent 31px);
+  animation: burst 0.4s ease-out forwards;
+}
+
+@keyframes burst {
+  from {
+    transform: scale(0.2);
+  }
+  to {
+    transform: scale(3);
+    opacity: 0;
+  }
+}
+
+.confetti i {
+  position: absolute;
+  top: -20px;
+  width: 10px;
+  height: 16px;
+  border-radius: 2px;
+  animation: fall 1.4s linear forwards;
+}
+
+@keyframes fall {
+  to {
+    transform: translateY(110vh) rotate(var(--r));
+  }
+}
+
+.mini {
+  display: inline-flex;
+  width: 1.6em;
+  height: 1.6em;
+  vertical-align: middle;
+}
+
+.mini svg {
+  width: 100%;
+  height: 100%;
+}
+
+.card .title .mini {
+  width: 64px;
+  height: 64px;
+}
+
+.pick .icon {
+  width: 64px;
+  height: 64px;
+  display: flex;
+}
+
+.pick .icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 640px) {
+  .cutin .stamp {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cutin .band,
+  .track-wrap.shake,
+  .token.moving .body {
+    animation: none;
+  }
 }
 
 .bottom {

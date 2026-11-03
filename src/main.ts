@@ -1,5 +1,8 @@
 import './style.css';
 import { registerSW } from 'virtual:pwa-register';
+import { NAMES, RACERS } from './characters';
+import { commentary, cutinsFor, type CutIn } from './show';
+import { play, setSound, soundOn, unlockAudio } from './sound';
 import {
   buildDeck,
   describeCard,
@@ -19,16 +22,10 @@ import {
 
 registerSW({ immediate: true });
 
-const RACERS = [
-  { name: 'ペンタ', icon: '🐧', color: '#3a86ff' },
-  { name: 'ケロ', icon: '🐸', color: '#2a9d8f' },
-  { name: 'ミケ', icon: '🐱', color: '#f4a261' },
-  { name: 'ラビ', icon: '🐰', color: '#e76f8a' },
-];
-const NAMES = RACERS.map((r) => r.name);
 const STEP_MS = [1300, 650];
+const CUTIN_MS = [1400, 850];
 const SAVE_KEY = 'dash-derby-save';
-const SAVE_VERSION = 2;
+const SAVE_VERSION = 3;
 const PHASES: Phase[] = ['setup', 'pass', 'bet', 'ready', 'race', 'result', 'final'];
 
 type Phase = 'setup' | 'pass' | 'bet' | 'ready' | 'race' | 'result' | 'final';
@@ -95,9 +92,13 @@ function esc(s: string) {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
+function mini(r: number) {
+  return `<span class="mini">${RACERS[r].svg}</span>`;
+}
+
 function racerChip(r: number) {
   const x = RACERS[r];
-  return `<span class="chip" style="--c:${x.color}">${x.icon} ${x.name}</span>`;
+  return `<span class="chip" style="--c:${x.color}">${mini(r)} ${x.name}</span>`;
 }
 
 function setPhase(phase: Phase) {
@@ -112,6 +113,7 @@ let renderedAt = 0;
 app.addEventListener(
   'click',
   (e) => {
+    unlockAudio();
     if (performance.now() - renderedAt < 400) {
       e.stopPropagation();
       e.preventDefault();
@@ -235,7 +237,7 @@ function renderBet() {
       const taken = slot === 'second' && draftBet.first === r;
       const on = draftBet[slot] === r;
       return `<button class="pick ${on ? 'on' : ''}" data-slot="${slot}" data-r="${r}" ${taken ? 'disabled' : ''} style="--c:${x.color}">
-        <span class="icon">${x.icon}</span>${x.name}</button>`;
+        <span class="icon">${x.svg}</span>${x.name}</button>`;
     }).join('');
   app.innerHTML = `
     <main class="screen center">
@@ -276,21 +278,27 @@ function renderReady() {
   app.querySelector('#go')!.addEventListener('click', () => {
     const lanes = shuffle([0, 1, 2, 3], Math.random);
     game.race = newRace(buildDeck(Math.random), lanes);
-    game.log = ['よーい…スタート！'];
+    game.log = ['各馬そろって、いまスタート！'];
     game.last = null;
     paused = false;
+    unlockAudio();
+    play('start');
     setPhase('race');
   });
 }
 
 // ---- レース ----
+let busy = false;
+let mudZone: { from: number; to: number } | null = null;
+let lastPos: number[] = [];
+
 function renderRace() {
-  const race = game.race!;
   const cols = FINISH + 1;
   const cells = Array.from({ length: LANE_COUNT }, (_, lane) =>
     Array.from(
       { length: cols },
-      (_, c) => `<div class="cell ${STARS.includes(c) ? 'star' : ''} ${c === FINISH ? 'goal' : ''} ${c === 0 ? 'start' : ''}" style="grid-row:${lane + 1};grid-column:${c + 1}"></div>`,
+      (_, c) =>
+        `<div class="cell ${STARS.includes(c) ? 'star' : ''} ${c === FINISH ? 'goal' : ''} ${c === 0 ? 'start' : ''}" data-col="${c}" style="grid-row:${lane + 1};grid-column:${c + 1}"></div>`,
     ).join(''),
   ).join('');
   app.innerHTML = `
@@ -299,26 +307,36 @@ function renderRace() {
         <span class="race-no">第${game.raceIndex + 1}レース${game.raceIndex === RACE_COUNT - 1 ? ' ×2' : ''}</span>
         <span id="deck" class="deck"></span>
         <div class="ctrl">
+          <button id="sound"></button>
           <button id="speed"></button>
           <button id="pause"></button>
         </div>
       </header>
       <section id="card" class="card"></section>
-      <section class="track-wrap">
+      <section class="track-wrap" id="track-wrap">
+        <div class="stands" id="stands"><span class="goal-arch">GOAL</span></div>
         <div class="track" id="track" style="--cols:${cols};--lanes:${LANE_COUNT}">
           ${cells}
-          ${RACERS.map((x, r) => `<div class="token" id="t${r}" style="--c:${x.color}"><span class="face">${x.icon}</span><span class="badge"></span></div>`).join('')}
+          ${RACERS.map(
+            (x, r) => `<div class="token" id="t${r}" style="--c:${x.color}">
+              <span class="shadow"></span>
+              <span class="body">${x.svg}</span>
+              <span class="arrow">◀</span>
+              <span class="dizzy">★ ★</span>
+              <span class="badge"></span>
+            </div>`,
+          ).join('')}
         </div>
       </section>
+      <section class="ticker" id="ticker"><span class="mic">実況</span><span class="line" id="line"></span></section>
       <section class="bottom">
         <ul id="log" class="log"></ul>
         <ul class="bets">
-          ${game.players
-            .map((p, i) => `<li><b>${esc(p.name)}</b> 🥇${RACERS[game.bets[i].first].icon} 🥈${RACERS[game.bets[i].second].icon}</li>`)
-            .join('')}
+          ${game.players.map((p, i) => `<li><b>${esc(p.name)}</b> 🥇${mini(game.bets[i].first)} 🥈${mini(game.bets[i].second)}</li>`).join('')}
         </ul>
       </section>
       <button class="big" id="next" hidden>結果を見る</button>
+      <div class="cutin" id="cutin" hidden></div>
     </main>`;
   app.querySelector('#pause')!.addEventListener('click', () => {
     paused = !paused;
@@ -330,8 +348,16 @@ function renderRace() {
     save();
     updateRace();
   });
+  app.querySelector('#sound')!.addEventListener('click', () => {
+    setSound(!soundOn());
+    updateRace();
+  });
   app.querySelector('#next')!.addEventListener('click', finishRace);
+  lastPos = game.race!.racers.map((r) => r.pos);
+  busy = false;
+  mudZone = null;
   updateRace();
+  showLine(game.log[game.log.length - 1] ?? '');
   schedule();
 }
 
@@ -355,11 +381,26 @@ function updateRace() {
     t.style.setProperty('--x', String(Math.max(0, Math.min(FINISH, r.pos))));
     t.style.setProperty('--y', String(Math.max(0, Math.min(LANE_COUNT - 1, r.lane))));
     t.classList.toggle('fallen', r.fallen);
-    t.classList.toggle('back', r.facing === -1);
+    t.classList.toggle('back', r.facing === -1 && r.status === 'running');
     t.classList.toggle('dq', r.status === 'dq');
-    t.querySelector('.badge')!.textContent = r.status === 'dq' ? '失格' : r.place ? `${r.place}着` : '';
+    t.classList.toggle('done', r.status === 'finished');
+    // 動いたコマだけ走るアニメーション
+    if (lastPos[i] !== undefined && lastPos[i] !== r.pos) {
+      t.classList.remove('moving');
+      void t.offsetWidth;
+      t.classList.add('moving');
+    }
+    const medal = ['🥇', '🥈', '🥉', '4着'];
+    t.querySelector('.badge')!.textContent = r.status === 'dq' ? '失格' : r.place ? medal[r.place - 1] : '';
+  });
+  lastPos = race.racers.map((r) => r.pos);
+  track.querySelectorAll<HTMLElement>('.cell').forEach((c) => {
+    const col = Number(c.dataset.col);
+    c.classList.toggle('mud', !!mudZone && col >= mudZone.from && col <= mudZone.to);
   });
   document.getElementById('deck')!.textContent = `山札 ${race.deck.length}枚${race.lastSpurt ? '・ラストスパート' : ''}`;
+  document.getElementById('track-wrap')!.classList.toggle('spurt', race.lastSpurt && !race.over);
+  document.getElementById('sound')!.textContent = soundOn() ? '🔊' : '🔇';
   document.getElementById('speed')!.textContent = game.speed ? '⏩ 速い' : '▶️ ふつう';
   const pause = document.getElementById('pause')!;
   pause.textContent = paused ? '▶️ 再開' : '⏸ 一時停止';
@@ -372,16 +413,26 @@ function updateRace() {
   card.style.animation = '';
   card.innerHTML = game.last ? `<div class="title">${game.last.title}</div><div class="detail">${game.last.detail}</div>` : `<div class="title">3…2…1…</div>`;
   document.getElementById('log')!.innerHTML = game.log
-    .slice(-4)
+    .slice(-4, -1)
     .reverse()
     .map((l) => `<li>${l}</li>`)
     .join('');
   (document.getElementById('next') as HTMLButtonElement).hidden = !race.over;
 }
 
+// 実況テロップ：右から流れ込んでくる
+function showLine(text: string) {
+  const line = document.getElementById('line');
+  if (!line) return;
+  line.textContent = text;
+  line.classList.remove('in');
+  void line.offsetWidth;
+  line.classList.add('in');
+}
+
 function schedule() {
   stopTimer();
-  if (paused || game.race!.over) return;
+  if (paused || busy || game.race!.over) return;
   timer = window.setTimeout(tick, game.last ? STEP_MS[game.speed] : 1500);
 }
 
@@ -390,22 +441,95 @@ function stopTimer() {
   timer = undefined;
 }
 
-function tick() {
+function leaders(race: RaceState): number[] {
+  const running = race.racers.map((r, i) => ({ r, i })).filter(({ r }) => r.status === 'running');
+  const top = Math.max(...running.map(({ r }) => r.pos));
+  return running.filter(({ r }) => r.pos === top).map(({ i }) => i);
+}
+
+const wait = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+
+async function tick() {
   const race = game.race!;
+  busy = true;
+  const before = leaders(race);
   const turn: Turn = drawNext(race, NAMES, Math.random);
+  mudZone = null;
   if (turn.event) {
-    game.last = { title: `⚡ ${EVENT_TITLES[turn.event]}`, detail: turn.log[0] ?? '', kind: 'event' };
+    game.last = { title: '⚡', detail: turn.log[0] ?? EVENT_TITLES[turn.event], kind: 'event' };
+    const mud = turn.effects.find((e) => e.type === 'event' && e.kind === 'mud');
+    if (mud?.type === 'event' && mud.from !== undefined) mudZone = { from: mud.from, to: mud.to! };
   } else if (turn.card) {
     const r = turn.card.kind === 'all' ? -1 : turn.card.racer;
-    game.last = { title: r >= 0 ? RACERS[r].icon : '🏃', detail: describeCard(turn.card, NAMES), kind: `card k-${turn.card.kind}` };
+    game.last = { title: r >= 0 ? mini(r) : '🏃', detail: describeCard(turn.card, NAMES), kind: `card k-${turn.card.kind}` };
+    play('flip');
   } else if (turn.log.length) {
     game.last = { title: '🏁', detail: turn.log[0], kind: 'card' };
   }
-  game.log.push(...turn.log);
-  if (race.over) game.log.push('レース終了！');
+  const line = race.over && !turn.effects.length ? turn.log[turn.log.length - 1] ?? 'レース終了！' : commentary(turn, NAMES, before, race.over ? [] : leaders(race), Math.random);
+  if (line) game.log.push(line);
+  if (race.over) game.log.push('レース終了！ 結果を見てみよう');
   save();
   updateRace();
+  showLine(line);
+  const cutins = cutinsFor(turn.effects, NAMES);
+  if (cutins.length) {
+    await wait(500);
+    for (const c of cutins) {
+      if (game.phase !== 'race') break;
+      await showCutin(c);
+    }
+  }
+  if (race.over) showLine(game.log[game.log.length - 1]);
+  busy = false;
   schedule();
+}
+
+function showCutin(c: CutIn): Promise<void> {
+  const el = document.getElementById('cutin');
+  if (!el) return Promise.resolve();
+  play(c.sfx);
+  if (c.kind === 'collide') shake();
+  if (c.kind === 'cheer') document.getElementById('stands')?.classList.add('wave');
+  const confetti = c.kind === 'goal' || c.kind === 'cheer' ? confettiHtml() : '';
+  el.className = `cutin k-${c.kind}`;
+  el.innerHTML = `
+    <div class="band">
+      <div class="who">${c.racers.map((r) => `<span class="big-racer ${c.kind === 'collide' && r === c.racers[1] ? 'hit' : ''}">${RACERS[r].svg}</span>`).join('')}</div>
+      <div class="words"><div class="title">${c.title}</div><div class="subline">${c.sub}</div></div>
+      ${c.kind === 'dq' ? '<div class="stamp">失格</div>' : ''}
+      <div class="fx"></div>
+    </div>
+    ${confetti}`;
+  el.hidden = false;
+  return new Promise((done) => {
+    const end = () => {
+      clearTimeout(t);
+      el.hidden = true;
+      el.removeEventListener('click', end);
+      document.getElementById('stands')?.classList.remove('wave');
+      done();
+    };
+    const t = setTimeout(end, CUTIN_MS[game.speed]);
+    el.addEventListener('click', end);
+  });
+}
+
+function shake() {
+  const w = document.getElementById('track-wrap');
+  if (!w) return;
+  w.classList.remove('shake');
+  void w.offsetWidth;
+  w.classList.add('shake');
+}
+
+function confettiHtml() {
+  const colors = ['#ffd166', '#ef476f', '#06d6a0', '#118ab2', '#ffffff'];
+  return `<div class="confetti">${Array.from(
+    { length: 24 },
+    (_, i) =>
+      `<i style="left:${Math.random() * 100}%;background:${colors[i % colors.length]};animation-delay:${Math.random() * 0.4}s;--r:${Math.random() * 720 - 360}deg"></i>`,
+  ).join('')}</div>`;
 }
 
 function finishRace() {
@@ -431,7 +555,7 @@ function renderResult() {
         <tr><th>プレイヤー</th><th>予想</th><th>今回</th><th>合計</th></tr>
         ${game.players
           .map(
-            (p, i) => `<tr><td>${esc(p.name)}</td><td>🥇${RACERS[game.bets[i].first].icon} 🥈${RACERS[game.bets[i].second].icon}</td>
+            (p, i) => `<tr><td>${esc(p.name)}</td><td>🥇${mini(game.bets[i].first)} 🥈${mini(game.bets[i].second)}</td>
             <td class="${p.lastPoints ? 'plus' : ''}">+${p.lastPoints}</td><td>${p.score}</td></tr>`,
           )
           .join('')}
